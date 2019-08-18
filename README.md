@@ -21,3 +21,6 @@ MSDS_DDS_CaseStudy2.ppt - PowerPoint used in presentation to FritoLay executive 
 Author: Daniel Clark
 Contact info: DanielClark@smu.edu 
 MSDS_DDS_CS2
+
+
+Youtube presentation - https://youtu.be/YTCdQHtOVpw
