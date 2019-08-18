@@ -1,0 +1,540 @@
+---
+title: "DDS_CaseStudy2"
+author: "Daniel Clark"
+date: "8/2/2019"
+output: html_document
+---
+
+# DDSAnalytics Attrition and Salary analysis for Frito Lay Employees
+
+## Executive Summary
+
+As businesses are more competitive than ever before, it is more important than ever before to be able to ensure top talent are available on a company roster helping your company get an edge. That’s why we reviewed over 1,100 employees at Frito-Lay as well as some survey and raise data to learn more about trends in the workplace.
+
+From a quick EDA standpoint, we saw that 16% of employees quit over the past year and that the sales representative and laboratory technician have the highest proportion of attrition, despite them being in the middle of the road with job satisfaction. In addition, there’s a spike in attrition for people who are living 25 miles away from the office. From a salary standpoint, I am noticing that the manager's sales directors all have the highest rate of salary, while the sales representatives are the lowest.
+
+To help predict attrition, we were able to run a random forest model to gain an 86% accuracy, while also learning that Overtime, Monthly Income and Job Role are the best predictors of attrition at Frito Lay.
+
+For Salary, we were also able to build a random forest model with a fit that has an RMSE below $2,000 per monthly income. This shows us that the biggest predictors of Job Salary are Years in Current Role, Job Role, and Age. This will be very useful in helping to manage the employee population to reduce attrition and understanding the inputs that are driving an employees salary.
+
+
+## Introduction
+
+The modern workforce in the United States is becoming more fluid than ever before. As the cost of living in the country continues to increase, wages are remaining stagnant, as reported in the latest economic trends. A result of this, we are seeing more employees shift between companies after just a few years and using the larger pay raise associated with switching jobs (as compared to staying put a single job) as a way to bolster their income to make a living.
+
+To combat this trend and potentially get a closer feel of the status of each employee and their potential for attribution, we are going to conduct a data analysis to identify trends in the employee base job titles, overall sentiment as well as salary with hopes to be able to predict which employee is likely to leave the company and what salaries are associated with the employee’s current standing. 
+
+# Primary Objectives
+
+1.) Explore Interesting Trends within the Frito Lay employee base specific to attrition and job role 
+2.) Build a model that predicts attrition and monthly income
+3.) Present the top 3 variables that are key components for predicting attrition and salary
+
+### Loading our data
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r data load}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(stats)
+
+employment <- "https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2-data.csv"
+traindata <- read.csv(url(employment))
+
+attrition <- 'https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2CompSet%20No%20Attrition.csv'
+testattrition <- read.csv(url(attrition))
+
+salary <- 'https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2CompSet%20No%20Salary.csv'
+testsalary <- read.csv(url(salary))
+
+head(traindata)
+head(testattrition)
+head(testsalary)
+```
+
+Frito Lay Supplied first-party data on over 1,100 employees as well as some detail on their Age, level of business travel, daily income rate, department, the distance they live from the office, education, gender, job role, performance rating and tenure at the company. We will be able to utilize this code to carry out our study to predict attribution and salary. 
+
+# Data Overview and Cleaning
+
+```{r, overview}
+# ID the structure of our dataset to see if there is any misidentified data
+# str(traindata)
+# str(testattrition)
+# str(testsalary)
+
+# look for duplicates
+traindata$ID[duplicated(traindata$ID)]
+testattrition$ID[duplicated(testattrition$ID)]
+testsalary$ID[duplicated(testsalary$ID)]
+
+# look for null values
+which(is.na(testattrition))
+which(is.na(traindata))
+which(is.na(testsalary))
+```
+Based on this overview, there are no duplicates and no NAs within our dataset, so minimal data cleaning is needed
+
+### remove under 18 and standard hours
+
+```{r, count standard hours}
+employeecounts <- table(traindata$EmployeeCount)
+barplot(employeecounts, main = "Employee Count")
+
+over18 <- table(traindata$Over18)
+barplot(over18, main = "Over 18 Count")
+
+standardhours <- table(traindata$StandardHours)
+barplot(standardhours, main = "Standard Hours Count")
+
+train <- traindata[,!(names(traindata) %in% c("ID", "StandardHours", "EmployeeNumber", "EmployeeCount", "Over18"))] 
+```
+Looking at the count of our variables, we can see there's only one version of data for ID, Employee Count, Standard Hours, and Over18, since there is only 1 level in each, we can remove this variable.
+
+# EDA
+
+### Run a correlation analysis of variables to see how they relate
+```{r correlation}
+#create a dataframe of numeric values
+train_num <-train[, sapply(train, is.numeric)]
+
+# correlation plot
+df_corr <- round(cor(train_num), 2)
+plot(df_corr)
+```
+
+
+### Count of Attritions, convert attrition to 1,0 instead of Yes or No
+```{r, count attrition}
+counts <- table(traindata$Attrition)
+counts
+barplot(counts, main = "Attribution Count")
+
+levels(traindata$Attrition) <- c(0,1)
+levels(testsalary$Attrition) <- c(0,1)
+
+counts2 <- table(traindata$Attrition)
+barplot(counts2, main = "Attribution Count")
+```
+Looking at the count between people who quit vs not within our training set, we can see that the number of quitters is about 1/5 of the size of those who didn't. This means the turnover rate at the time the data was taken was 20 percent. Comparing to the national average (https://www.bls.gov/news.release/pdf/jolts.pdf) of 2.3%, we can see this is becoming a bit of a problem for Frito Lay.
+
+About 84% of our training data was amongst employees who did not quit and 16% was with those who quit.
+
+
+### Calculate the means of all our data to see what we can about the total employee base. For fun, let's also compare the means of people who selected “Yes” for Attrition and those who selected “No”
+```{r, means}
+quitters <- traindata %>% filter(traindata$Attrition == 1)
+nonquitters <- traindata %>% filter(traindata$Attrition == 0)
+meanquit <- lapply(quitters, mean)
+meannonquit <- lapply(nonquitters, mean)
+```
+
+A Couple of key notes to flag:
+
+Age
+- Yes = 33.8
+- No = 37.4
+
+Monthly Income
+- Yes = $4,762
+- No = $6,702
+
+Job Satisfaction
+- Yes = 2.435714
+- No = 2.761644
+
+Years with Current Manager
+- Yes = 2.942857
+- No = 4.369863
+
+Job Level
+- Yes = 1.635714
+- No = 2.116438
+
+We can see some early trends emerging with Attrition and how some job qualities may have a significant effect on whether an employee will quit.
+
+### Create age groups to use for our training set
+```{r, age groups}
+#train$agegroup <- cut(train$Age, breaks = seq(5, 35, 45))
+#testattrition$agegroup <- cut(testattrition$Age, breaks = seq(5, 35, 45))
+#testsalary$agegroup <- cut(testsalary$Age, breaks = seq(5, 35, 45))
+
+train$agegroup <- with(train, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+
+testattrition$agegroup <- with(testattrition, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+
+testsalary$agegroup <- with(testsalary, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+
+counts3 <- table(train$agegroup)
+barplot(counts3, main = "Age Count")
+
+```
+After binning up our age groups into a set of 5, we can see that the majority of the employee base is between the ages of 26 and 43. Grouping by age will allow us to better predict the performance of ages indicating attrition and salary.
+
+### Mean Salary for Job Title/ Education and Salary
+
+```{r, mean salary and job title}
+Meansbyjobtitle <- train %>% group_by(JobRole) %>% dplyr::summarise(MedSalary = median(MonthlyIncome, na.rm=TRUE),Meansatis= mean(JobSatisfaction, na.rm=TRUE))
+
+
+#Subsetting the job satisfaction data into top/bottoms
+meanjs <- Meansbyjobtitle %>% arrange(desc(Meansatis))
+
+#Subsetting the salary data into top/bottoms
+medsal <- Meansbyjobtitle %>% arrange(desc(MedSalary))
+
+#Mean Job Satisfaction by Job Role
+ggplot(meanjs, aes(x=reorder(JobRole,-Meansatis),y=Meansatis,fill=JobRole)) + geom_bar(stat = "identity") + theme_minimal() + theme(plot.title = element_text(hjust=0.1), axis.text.x = element_text(hjust = 0.9, angle = 65)) + labs(x="Job Role", y="Mean Job Satisfaction", title = "Job Satisfaction by Title") 
+
+#Median Income by Job Role
+ggplot(medsal, aes(x=reorder(JobRole,-MedSalary),y=MedSalary,fill=JobRole)) + geom_bar(stat = "identity") + theme_minimal() + theme(plot.title = element_text(hjust=0.1), axis.text.x = element_text(hjust = 0.9, angle = 65)) + labs(x="Job Role", y="Median Salary", title = "Median Salary by Title") 
+```
+Looking at the average job satisfaction grouped by job title, the Healthcare Representative and Research Scientist have the highest mean overall job satisfaction in the dataset. On the lower end of the satisfaction spectrum, the Manufacturing Director and research Director have the lowest job satisfaction by the group. Interesting that the director level audiences are reporting the lower end of the job satisfaction score as opposed to the healthcare representative and Research Scientist.
+
+From a mean job salary standpoint, we can see that there is a large gap between the top two paid positions and the other job groups. The Manager level and Research Director positions have the top two salaried levels while the Sales Representatives and Human Resources positions have the lowest two salaries.
+
+```{r, scatter by attrition}
+Attritionplot <- ggplot(train, aes(x=DailyRate, y=MonthlyIncome), title ='Attrition') + geom_point()
+Attritionplot + facet_wrap(~Attrition)
+Satisfactionplot <- ggplot(train, aes(x=DailyRate, y=MonthlyIncome), title ='Attrition') + geom_point()
+Attritionplot + facet_wrap(~JobSatisfaction)
+Attritionsat <- ggplot(train, aes(x=JobSatisfaction, y=MonthlyIncome), title ='Attrition') + geom_point()
+Attritionsat + facet_wrap(~Attrition)
+
+ggplot(train, aes(x=JobRole, fill=Attrition)) + geom_bar() + theme_minimal() + theme(plot.title = element_text(hjust = 0.9), axis.text.x = element_text(hjust=0.9, angle = 65)) + labs(x = "Job Role", y = "Number of Employees", title = "Attrition Job Role")
+```
+Looking at the relationship between Daily Rate and Monthly income, we can see that there doesn’t appear to be a linear relationship between daily rate and monthly income in both those who quit and those who didn't.
+
+In Addition, it wasn’t apparent that we are able to see a relationship between job satisfaction and income/rate. Just that more people had a job satisfaction of at least 3 than 2 or less.
+
+Looking triangularly at job satisfaction, income and attrition, we can see that there seems to be a relationship between income and attrition, but not related to job satisfaction. It appears that the lower-income employees are more likely to quit a job than those making a higher salary.
+
+Building an Attribution Plot by job title, we can see there is an alarming turnover rate for Sales Reps at the company with almost 50%, on the other side of the coin, Manufacturing Director and Research director tended to have the lowest turnover rates.
+
+
+
+### Group Distance From Home
+```{r, distance from home}
+# distance grouping
+train$DistanceGrouping <- with(train, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+testattrition$DistanceGrouping <- with(testattrition, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+testsalary$DistanceGrouping <- with(testsalary, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+ggplot(train, aes(x=reorder(DistanceGrouping, DistanceFromHome), fill=Attrition)) + geom_bar() + theme_minimal() + theme(plot.title = element_text(hjust = 0.5)) + labs(x = "Distance From Home Group", y = "Number of Employees", title = "Attrition and Distance from Home")
+```
+Since commute time may factor in employee’s decision to leave a company, a plot of attrition by distance from home was employed to see if there were any trends available. While there was nothing notable for employees within 18 miles of the office, we did see a noticeable bump in attrition for a smaller pool of employees who live further away.
+
+### Corr Heatmap
+```{r, cor heatmap}
+library(corrplot)
+
+corrplot(df_corr, order="FPC", title="Variable Corr Heatmap",tl.srt=9)
+
+```
+ Reviewing our correlation matrix, we can see instances of high correlation int eh following variables, which would be caused to remove from our models with future analysis.
+
+- Performance Rating and Percent Salary Hike
+- Monthly Income and Job Level
+- Age and Total Working years
+- Years at Current Role and Years at Company
+- Years at Company and Years with Current Manager
+
+So with this in mind, we'll drop the following variables:
+- Percent Salary Hike
+- Job Level
+- Total Working Years
+- Years at Company
+### Removed high correlation variables from set
+```{r remove variables}
+train2 <- train[,!(names(train) %in% c("YearsAtCompany", "TotalWorkingYears", "JobLevel", "PercentSalaryHike"))] 
+```
+
+This will be the dataset we use to model our Attrition and Salary Prediction
+
+
+# Modeling
+
+### Create a train test group
+```{r, traintest}
+library(caret)
+
+data_part <- createDataPartition(y = train2$Attrition, p = 0.70, list = F)
+cvtest <- train2[-data_part,]
+cvtrain <- train2[data_part,]
+
+head(cvtrain)
+head(cvtest)
+```
+We are going to break up our train2 data into training and testing sets. The training set will help us build a predictive model of attrition and the testing set will be used to evaluate the fit. 
+
+
+## Classification Procedure
+
+```{r, logit regreesion model}
+lm(Attrition ~., data=cvtrain)
+```
+From a classification standpoint, we can see that age group, over time, job role and education will play a significant role in the classification of whether an employee will quit or not.
+
+### Naive Bayes Model
+```{r, naive bayes model}
+library(caret)
+library(e1071)
+library(MASS)
+library(randomForest)
+library(naivebayes)
+
+set.seed(12)
+
+Naive_Bayes_train2=naiveBayes(Attrition~., data=cvtrain)
+
+# Predictions
+attritionpredict = predict(Naive_Bayes_train2, cvtest)
+confusionMatrix(table(attritionpredict, cvtest$Attrition))
+cMatrixNB <- table(attritionpredict, cvtest$Attrition)
+plot(cMatrixNB, col="blue", ylab="Actual", xlab="Predicted", main='Naive Bayes Confusion Matrix')
+```
+Using the Naive Bayes procedure to predict attrition, we can see that we are finding that we are great at predicting those who will stick around, but we are having some problems predicting who will leave. We are definitely better than a random chance but our 94% Sensitivity to a 47% specificity rate is a little below our 60/60 performance model. Since our dataset has vastly more people who didn’t quit over people who did, our model is feeling rewarded if it selects attrition = 0 nearly every time even though it’s not really based on the remaining data. Based on our p-value of 0.1009, we can deduce that there’s a good model fit to the performance of our data.
+
+
+### Let's try a Random Forest Model
+```{r, random forest}
+library(mboost)
+library(kernlab)
+library(randomForest)
+
+set.seed(666)
+
+RF_train2 <- train(Attrition ~., cvtrain, method = 'rf', trControl = trainControl(method='repeatedcv'), importance = T)
+
+#RF_train2=randomForest(Attrition~., data=cvtrain, importance = TRUE)
+#fit_rf <- randomForest(Attrition ~., data= cvtrain, importance=TRUE)
+predTrain <- predict(RF_train2, cvtest)
+
+confusionMatrix(table(cvtest$Attrition, predTrain))
+cMatrixRF <- table(predTrain, cvtest$Attrition)
+plot(cMatrixRF, col="blue", ylab="Actual", xlab="Predicted", main='Random Forest Confusion Matrix')
+```
+
+Performing a more sophisticated random forest model to evaluate attrition, we were able to a higher collective rate of sensitivity and specificity at 86% and 63% respectively, with a total accuracy of 86%. 
+
+### Let's try a Support Vector Machine model
+```{r, Support Vector Machine}
+set.seed(777)
+
+svm_train2 <- train(Attrition ~., cvtrain, method = 'svmRadial', trControl = trainControl(method='repeatedcv'), importance=T)
+
+predTrainsvm <- predict(svm_train2, cvtest)
+
+confusionMatrix(table(cvtest$Attrition, predTrainsvm))
+cMatrixsvm <- table(predTrainsvm, cvtest$Attrition)
+plot(cMatrixsvm, col="blue", ylab="Actual", xlab="Predicted", main='Support Vector Machine Confusion Matrix')
+```
+
+After running a support vector machine model, we are seeing that it performed extremely well with specificity at 100%, and its sensitivity was a little lower at 85%. However, the total accuracy was a bit lower than that of the random forest model which achieved 86% accuracy. One of the problems with this SVM model is that it appears to be rewarding itself by predicting no for attrition nearly every time with only 4 yes’s. While this will give us a high score, it leads me to believe we are a bit overfit.
+
+### Feature Importance for Predictive ability
+```{r, var importance}
+library(rminer)
+library(mlbench)
+
+rf_import <- varImp(RF_train2, scale = FALSE)
+plot(rf_import)
+
+
+#VariableImportance=Importance(svm_train2,cvtrain,method="sensv")
+
+#varImp(svm_train2, scale = FALSE)
+#svm_train3 <- as.factor(svm_train2)
+
+#importance(svm_train2)
+```
+
+Reviewing the list of variables and their importance on predicting attrition, we can see that the top 3 are as follows:
+
+Overtime_Yes with the vast majority
+Monthly income 
+Stock Option level
+
+- The overtime piece is interesting as it appears that people who are overworked may be wanting to leave the company. Also, people who are getting overtime pay may be more likely to keep their job and make more.
+- Monthly income can also play a factor as people may not want to leave a great salary of those who are making a lower salary may want to quit.
+- Stock Options Level typically increases at a company the longer you stay, so we can see how that would correlate with those who quit.
+
+As for this, I will say our random forest model was the best performer at predicting attrition.
+
+
+## Conclusion
+
+From the implications to the research question standpoint, if Frito lay wants to reduce attrition of quality employees, they would want to re-evaluate their Overtime policy, income level, and stock options level to ensure their good employees are happy within those areas. You can also use this as an ongoing predictive model so that if an employee starts to meet the criteria on these variables that are indicative of attrition, employees could be flagged for a raise or increase in stock options level.
+
+
+
+
+
+
+# Salary Prediction
+
+## Check for Collinnearity Within our Salary data
+```{r, colinearity}
+library(HH)
+salaryfitincome <- lm(MonthlyIncome ~ ., data = train2)
+summary(salaryfitincome)
+vif(salaryfitincome)
+```
+Looking at the interaction rate of all the variables, we can see that the following variables show to have high collinearity per our model, which we can remove. For the variables where we are seeing high collinearity within categorical variables, we will leave in. This is all validated through our significant p-value of <0.0001.
+
+Below are the variables with high collinearity
+
+- Age/Age Group
+- Distance Grouping
+- Department
+
+### Let's remove the collinear variables from our dataset
+```{r, collinearity removal}
+train3 <- train2[,!(names(train2) %in% c("agegroup", "Department", " DistanceGrouping"))] 
+head(train3)
+```
+This will remove some of the highly collinear variables that may possibly muddy our regression model that could affect our result.
+
+
+### Create Train and Test set for our regression model
+```{r, train test reg}
+data_partreg <- createDataPartition(y = train3$MonthlyIncome, p = 0.70, list = F)
+cvtestreg <- train3[-data_partreg,]
+cvtrainreg <- train3[data_partreg,]
+
+head(cvtestreg)
+head(cvtrainreg)
+```
+
+Like before, we broke our larger data set into training and test sets. This will be useful in cross-validating our work.
+
+## Regression Procedure
+
+Methodology
+
+We will be performing three different functions to reduce the number of variables and predict the performance of our regression. These will be as follows.
+
+-K- Nearest Neighbors
+-Random Forest
+-Support Vector Method
+
+```{r, regresion}
+lm(MonthlyIncome ~., data= cvtrainreg)
+```
+Looking at the linear model, we can see that job role coefficients are going to be the biggest predictors of monthly income. followed by business travel and performance rating. 
+
+# K Nearest Neighbor
+
+```{r, KNN}
+library(doParallel)
+
+numcores <- parallel::detectCores() - 1
+cl <- makePSOCKcluster(numcores)
+registerDoParallel(cl)
+
+set.seed(123)
+
+traind <- trainControl(method = 'repeatedcv', number = 10, repeats = 3)
+
+knn_fit <- train(MonthlyIncome ~ ., data = cvtrainreg, method = 'knn', trControl = traind, preProcess = c('center', 'scale'), tuneLength = 10)
+
+knn_fit
+
+plot(knn_fit)
+
+predregtrainknn <- predict(knn_fit, cvtestreg)
+```
+Our Lowest RMSE came with a K nearest neighbors of 7. This prediction model gives us an RMSE of $2,300 on monthly income, which falls below our $3,000 evaluation criteria. 
+
+
+### Let'ss try with random forest
+```{r, random forest regressor}
+set.seed(333)
+rf_fit <- train(MonthlyIncome ~ ., data = cvtrainreg, method = 'rf', trControl = traind, preProcess = c('center', 'scale'), tuneLength = 10, importance=T)
+
+rf_fit
+
+plot(rf_fit)
+
+predregtrainrf <- predict(rf_fit, cvtestreg)
+```
+To compare our KNN procedure, we are going to employ a random forest procedure with our data to predict the Monthly Income of employees.
+
+Like KNN, Random Forest is an ensemble technique capable of performing regression tasks which leverage multiple decision trees, bootstrapped into an aggregate score. Like cross-validation, we are training the training set to validate and make itself smarter.
+
+For this particular case, we were able to use 19 frees to minimize our RMSE score down to $1951, which is significantly better than our KNN model. Our R2 score is also 0.80 at this level, which is predictive while also avoiding overfitting. In layman’s terms, this means it’s both predictive to its own data and we can expect it to do the same with new data.
+
+### Let's try with the standard variable method
+```{r, svm regressor}
+set.seed(333)
+svm_fit <- train(MonthlyIncome ~ ., data = cvtrainreg, method = 'svmRadial', trControl = traind, preProcess = c('center', 'scale'), tuneLength = 10, importance=T)
+
+svm_fit
+
+plot(svm_fit)
+
+predregtrainsvm <- predict(svm_fit, cvtestreg)
+```
+In hopes to improve on our random forest score, Support Vector Machines are a subclass of supervised regressors that attempt to regress a feature space into a set of regressive linear predictors.
+
+In this case, our minimum RMSE score dropped down to $2035, which is higher than our Random forest score. It should be noted that this score is less computationally expensive than Random Forest at 2 C rather than 19 trees. So while that’s not a factor with $1000 data points, it will be a concern if we go up to the millions.
+
+So with the 3 models in question, we will use the random forest predictor as our final model.
+
+### Variable importance of our regressor
+```{r, variable importance regressor}
+rfimportreg <- varImp(rf_fit, scale = FALSE)
+#svmimportreg <- varImp(svm_fit, scale = FALSE)
+
+plot(rfimportreg)
+#plot(svmimportreg)
+```
+
+Breaking out the top features that are diving Monthly Income at Frito Lay, we can say that Job Role is the most important predictor, followed by Age and then Years with Current Manager. This would make sense from a prediction standpoint as a Job title is typically a heavier predictor in salary, and the older you are, the more senior you typically are, which affects your Salary. We also have Years with Current Manager closely followed by Years in Current Role, which would make sense as it can tie back to a users job performance and raises once they have plenty of experience working the same job with the same boss.
+
+## Conclusion
+
+From the implications to the research question standpoint, Frito Lay can reduce attrition of quality of employees if they can predict which one will leave and provide them an offer related to Stock Option Value, Overtime, and Monthly Income. This could come in the form of a raise, or a bump in an employee’s vested interest and potentially offering overtime to help keep people happy and working for the company.
+
+For monthly Salary, if we need to predict a salary growth for an employee, we can use the linear model and the significant predictions gained through job role, age and their years with a manager. Since monthly income was a factor in attrition, we could potentially use this salary regression model to help show current employees how their salary will likely change over time as they work for a company.
+
+This could be powerful as they can plot out their futures and optimize their growth over time.
+
+
+## Output data
+```{r, classification}
+#run prediction on rf classification model using our test set
+dftestpreds <- predict(RF_train2, testattrition)
+
+dftestpreds1 <- cbind(testattrition$ID, dftestpreds)
+dfclasspred <- as.data.frame(dftestpreds1)
+dfclasspred$Attrition <- with(dfclasspred, ifelse(dftestpreds == 1, "No", "Yes"))
+classtestfinal <- dfclasspred[,!(names(dfclasspred) %in% c("dftestpreds"))] 
+
+#outputting data
+write.csv(classtestfinal,"/Users/danielclark/Desktop/SMU/DoingDataScience/Project2/DanielClark_DDSCaseStudy2_PredictAttrition.csv",row.names = FALSE)
+```
+
+
+```{r, regression}
+#run prediction on rf classification model using our test set
+testsalary$Attrition <- with(testsalary, ifelse(Attrition == 1, "Yes", "No"))
+
+dftestregress <- predict(rf_fit, testsalary)
+
+dftestpreds2 <- cbind(testsalary$ID, dftestregress)
+dfregpred <- as.data.frame(dftestpreds2)
+names(dfregpred)<- c("ID", "MonthlySalary")
+
+#outputting data
+write.csv(classtestfinal,"/Users/danielclark/Desktop/SMU/DoingDataScience/Project2/DanielClark_DDSCaseStudy2_PredictSalary.csv",row.names = FALSE)
+```
+
+
+GitHub Link - https://github.com/dclark18/CaseStudy2DDS-
+Youtube Link - https://youtu.be/YTCdQHtOVpw 
