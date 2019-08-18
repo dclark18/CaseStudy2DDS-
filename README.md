@@ -18,8 +18,14 @@ Codebook.html - HTML version of description of data for Training and testing set
 DanielClark_DDS_CaseStudy2.Rmd - R Markdown file of data cleaning and analysis
 DanielClark_DDS_CaseStudy2.html - HTML knit of data cleaning and analysis process
 MSDS_DDS_CaseStudy2.ppt - PowerPoint used in presentation to FritoLay executive team
+
+
 Author: Daniel Clark
+
+
 Contact info: DanielClark@smu.edu 
+
+
 MSDS_DDS_CS2
 
 
