@@ -1,0 +1,95 @@
+---
+title: "DanielClark_CaseStudy2_Codebook"
+author: "Daniel Clark"
+date: "8/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(knitr)
+library(kableExtra)
+library(readxl)
+```
+
+## Frito Lay Employee Analysis
+
+
+This codebook provides an overview of the data as it was received and any modifications that were required to support our analysis. It is a documentation of the variables in the data set, any normalization or modifications that were made, and should support replication of our analysis. 
+
+### Data Files Received
+
+Frito Lay provided our consulting group with thre Comma Delimited files (.csv) file titled Beers.csv & Breweries.csv. 
+
+```{r data import}
+employment <- "https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2-data.csv"
+traindata <- read.csv(url(employment))
+
+attrition <- 'https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2CompSet%20No%20Attrition.csv'
+testattrition <- read.csv(url(attrition))
+
+salary <- 'https://raw.githubusercontent.com/dclark18/MSDS_DanielClark_EmployementAttrition/master/CaseStudy2CompSet%20No%20Salary.csv'
+testsalary <- read.csv(url(salary))
+```
+
+### Data Collection
+
+It is unclear how this data was collected. Our consulting group contacted the source, but did not receive a description on the methodology used. Because of this, we will have to extrapolate future implications with the data.  
+
+### Initial Data Structure
+
+The data contained within the provided table has the following variable names and types: 
+
+Derived variables include: 
+
+### traindata.csv
+
+```{r}
+kable(t(lapply(traindata,class)))%>%
+  kable_styling()%>%
+  scroll_box(height = 100, width = 500)
+```
+
+### testattrition.csv
+
+```{r}
+kable(t(lapply(testattrition,class)))%>%
+  kable_styling()%>%
+  scroll_box(height = 100, width = 500)
+```
+
+
+
+### testsalary.csv
+
+```{r}
+kable(t(lapply(testsalary,class)))%>%
+  kable_styling()%>%
+  scroll_box(height = 100, width = 500)
+```
+
+### Data Cleaning
+
+To more easily analyze Age Groups and Commute Distance, we converted those continuous variables to Ordinal. Also removed columns that didn't have multiple levels. 
+
+```{r, count standard hours}
+train <- traindata[,!(names(traindata) %in% c("ID", "StandardHours", "EmployeeNumber", "EmployeeCount", "Over18"))] 
+```
+
+```{r, age groups}
+train$agegroup <- with(train, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+
+testattrition$agegroup <- with(testattrition, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+
+testsalary$agegroup <- with(testsalary, ifelse(Age < 25, "18-24", ifelse(Age < 34, "25-34", ifelse(Age < 44, "35-44", ifelse(Age < 52, "45 - 52", "Over53")))))
+```
+
+```{r, distance from home}
+# distance grouping
+train$DistanceGrouping <- with(train, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+testattrition$DistanceGrouping <- with(testattrition, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+testsalary$DistanceGrouping <- with(testsalary, ifelse(DistanceFromHome > 25, "25+ Miles", ifelse(DistanceFromHome > 18, "19 - 25 Miles", ifelse(DistanceFromHome > 10, "11 - 18 Miles", ifelse(DistanceFromHome >5, "6 - 10 Miles", "Less than 6  Miles")))))
+
+```
